@@ -1,0 +1,508 @@
+import React, { useState, useRef } from 'react';
+import { Play, RotateCcw, CheckCircle, XCircle, AlertTriangle, Code, Settings } from 'lucide-react';
+
+const LLMCodeGenerator = () => {
+  const [prompt, setPrompt] = useState('');
+  const [language, setLanguage] = useState('python');
+  const [generatedCode, setGeneratedCode] = useState('');
+  const [validationResult, setValidationResult] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [generationHistory, setGenerationHistory] = useState([]);
+  const [retryCount, setRetryCount] = useState(0);
+  const [advancedSettings, setAdvancedSettings] = useState({
+    maxRetries: 3,
+    temperature: 0.7,
+    includeTests: true,
+    includeComments: true,
+    codeStyle: 'clean'
+  });
+  
+  const retryCountRef = useRef(0);
+
+  const generateCode = async (isRetry = false) => {
+    if (!prompt.trim()) {
+      alert('코드 생성 요구사항을 입력해주세요.');
+      return;
+    }
+
+    if (!isRetry) {
+      retryCountRef.current = 0;
+      setRetryCount(0);
+      setGenerationHistory([]);
+    }
+
+    setIsGenerating(true);
+    setValidationResult(null);
+
+    try {
+      const systemPrompt = `
+You are an expert code generator specialized in creating high-quality, production-ready code.
+
+GENERATION SETTINGS:
+- Language: ${language}
+- Temperature: ${advancedSettings.temperature}
+- Include Tests: ${advancedSettings.includeTests}
+- Include Comments: ${advancedSettings.includeComments}
+- Code Style: ${advancedSettings.codeStyle}
+
+REQUIREMENTS:
+${prompt}
+
+${isRetry ? `
+PREVIOUS ATTEMPT FAILED WITH ISSUES:
+${validationResult?.issues?.join('\n') || 'Code quality issues detected'}
+
+IMPROVEMENT INSTRUCTIONS:
+- Fix all identified issues
+- Ensure code follows best practices
+- Add proper error handling
+- Include comprehensive documentation
+` : ''}
+
+Please respond with a JSON object in this exact format:
+{
+  "code": "Complete, production-ready code with proper structure",
+  "explanation": "Detailed explanation of implementation approach and design decisions",
+  "features": ["List of key features implemented"],
+  "dependencies": ["List of required dependencies/imports"],
+  "complexity": "Simple/Medium/Complex",
+  "testCases": ["List of suggested test cases if includeTests is true"]
+}
+
+CODE QUALITY REQUIREMENTS:
+- Follow ${language} best practices and conventions
+- Include proper error handling and input validation
+- Add comprehensive comments and documentation
+- Ensure code is modular and maintainable
+- Consider performance and security implications
+
+Your entire response MUST be a single, valid JSON object. DO NOT include any text outside of the JSON structure.
+      `;
+
+      const response = await window.claude.complete(systemPrompt);
+      const result = JSON.parse(response);
+      
+      setGeneratedCode(result.code);
+      
+      // 생성 히스토리 업데이트
+      const historyEntry = {
+        attempt: retryCountRef.current + 1,
+        code: result.code,
+        explanation: result.explanation,
+        features: result.features,
+        dependencies: result.dependencies,
+        complexity: result.complexity,
+        testCases: result.testCases,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      
+      setGenerationHistory(prev => [...prev, historyEntry]);
+      
+      // 자동 검증 실행
+      await validateCode(result.code, result);
+      
+    } catch (error) {
+      console.error('Code generation error:', error);
+      setGeneratedCode('// 코드 생성 중 오류가 발생했습니다.');
+      setValidationResult({
+        isValid: false,
+        score: 0,
+        issues: ['JSON 파싱 오류 또는 API 호출 실패'],
+        suggestions: ['요구사항을 더 명확히 작성해보세요.']
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const validateCode = async (code, metadata = null) => {
+    setIsValidating(true);
+    
+    try {
+      const validationPrompt = `
+You are a code quality analyst. Analyze the following ${language} code for quality, security, and best practices.
+
+CODE TO ANALYZE:
+\`\`\`${language}
+${code}
+\`\`\`
+
+ORIGINAL REQUIREMENTS:
+${prompt}
+
+${metadata ? `
+METADATA:
+- Complexity: ${metadata.complexity}
+- Features: ${metadata.features?.join(', ')}
+- Dependencies: ${metadata.dependencies?.join(', ')}
+` : ''}
+
+Please respond with a JSON object in this exact format:
+{
+  "isValid": true/false,
+  "score": number (0-100),
+  "issues": ["List of specific issues found"],
+  "suggestions": ["List of specific improvement suggestions"],
+  "securityScore": number (0-100),
+  "performanceScore": number (0-100),
+  "maintainabilityScore": number (0-100),
+  "testCoverage": "Assessment of test coverage",
+  "codeSmells": ["List of code smells detected"],
+  "bestPractices": ["List of best practices followed or missing"]
+}
+
+VALIDATION CRITERIA:
+- Syntax correctness and language conventions
+- Security vulnerabilities and best practices
+- Performance optimization opportunities
+- Code maintainability and readability
+- Error handling and edge cases
+- Documentation quality
+- Test coverage (if tests included)
+
+Your entire response MUST be a single, valid JSON object.
+      `;
+
+      const response = await window.claude.complete(validationPrompt);
+      const result = JSON.parse(response);
+      
+      setValidationResult(result);
+      retryCountRef.current++;
+      setRetryCount(retryCountRef.current);
+      
+    } catch (error) {
+      console.error('Validation error:', error);
+      setValidationResult({
+        isValid: false,
+        score: 0,
+        issues: ['검증 중 오류가 발생했습니다.'],
+        suggestions: ['다시 시도해주세요.']
+      });
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  const retryGeneration = async () => {
+    if (retryCountRef.current >= advancedSettings.maxRetries) {
+      alert(`최대 재시도 횟수(${advancedSettings.maxRetries})에 도달했습니다.`);
+      return;
+    }
+    
+    await generateCode(true);
+  };
+
+  const getScoreColor = (score) => {
+    if (score >= 80) return 'text-green-600';
+    if (score >= 60) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const getValidationIcon = () => {
+    if (validationResult?.isValid) {
+      return <CheckCircle className="w-5 h-5 text-green-500" />;
+    } else if (validationResult?.isValid === false) {
+      return <XCircle className="w-5 h-5 text-red-500" />;
+    }
+    return <AlertTriangle className="w-5 h-5 text-yellow-500" />;
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto p-6 bg-white">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">LLM 기반 코드 생성 및 검증 시스템</h1>
+        <p className="text-gray-600">지능형 코드 생성, 자동 품질 검증, 반복 개선 기능</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* 입력 패널 */}
+        <div className="lg:col-span-1">
+          <div className="bg-gray-50 p-6 rounded-lg">
+            <h2 className="text-xl font-semibold mb-4">코드 생성 설정</h2>
+            
+            {/* 언어 선택 */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">프로그래밍 언어</label>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="python">Python</option>
+                <option value="javascript">JavaScript</option>
+                <option value="java">Java</option>
+                <option value="csharp">C#</option>
+                <option value="go">Go</option>
+                <option value="rust">Rust</option>
+              </select>
+            </div>
+
+            {/* 요구사항 입력 */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">코드 생성 요구사항</label>
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="예시: 이진 탐색 트리를 구현해주세요. 삽입, 삭제, 검색 기능이 필요하고, 균형을 맞추는 로직도 포함해주세요."
+                className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* 고급 설정 */}
+            <div className="mb-4">
+              <details className="group">
+                <summary className="flex items-center cursor-pointer text-sm font-medium mb-2">
+                  <Settings className="w-4 h-4 mr-2" />
+                  고급 설정
+                </summary>
+                <div className="mt-3 space-y-3 pl-6">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">최대 재시도 횟수</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="5"
+                      value={advancedSettings.maxRetries}
+                      onChange={(e) => setAdvancedSettings(prev => ({
+                        ...prev,
+                        maxRetries: parseInt(e.target.value)
+                      }))}
+                      className="w-full p-1 text-sm border border-gray-300 rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Temperature (창의성)</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={advancedSettings.temperature}
+                      onChange={(e) => setAdvancedSettings(prev => ({
+                        ...prev,
+                        temperature: parseFloat(e.target.value)
+                      }))}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-gray-500">{advancedSettings.temperature}</span>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="flex items-center text-xs">
+                      <input
+                        type="checkbox"
+                        checked={advancedSettings.includeTests}
+                        onChange={(e) => setAdvancedSettings(prev => ({
+                          ...prev,
+                          includeTests: e.target.checked
+                        }))}
+                        className="mr-2"
+                      />
+                      테스트 코드 포함
+                    </label>
+                    <label className="flex items-center text-xs">
+                      <input
+                        type="checkbox"
+                        checked={advancedSettings.includeComments}
+                        onChange={(e) => setAdvancedSettings(prev => ({
+                          ...prev,
+                          includeComments: e.target.checked
+                        }))}
+                        className="mr-2"
+                      />
+                      상세 주석 포함
+                    </label>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            {/* 실행 버튼 */}
+            <div className="space-y-2">
+              <button
+                onClick={() => generateCode(false)}
+                disabled={isGenerating || isValidating}
+                className="w-full flex items-center justify-center px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Play className="w-5 h-5 mr-2" />
+                {isGenerating ? '생성 중...' : '코드 생성'}
+              </button>
+              
+              {validationResult && !validationResult.isValid && retryCount < advancedSettings.maxRetries && (
+                <button
+                  onClick={retryGeneration}
+                  disabled={isGenerating || isValidating}
+                  className="w-full flex items-center justify-center px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <RotateCcw className="w-5 h-5 mr-2" />
+                  재시도 ({retryCount}/{advancedSettings.maxRetries})
+                </button>
+              )}
+            </div>
+
+            {/* 상태 표시 */}
+            {(isGenerating || isValidating) && (
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                <div className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                  <span className="text-sm text-blue-600">
+                    {isGenerating ? '코드 생성 중...' : '코드 검증 중...'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 결과 패널 */}
+        <div className="lg:col-span-2">
+          {/* 생성된 코드 */}
+          {generatedCode && (
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold">생성된 코드</h3>
+                <div className="flex items-center space-x-2">
+                  {getValidationIcon()}
+                  <span className="text-sm text-gray-600">
+                    시도 {retryCount}/{advancedSettings.maxRetries}
+                  </span>
+                </div>
+              </div>
+              <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-auto max-h-96 text-sm">
+                <code>{generatedCode}</code>
+              </pre>
+            </div>
+          )}
+
+          {/* 검증 결과 */}
+          {validationResult && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-3">코드 품질 검증 결과</h3>
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                {/* 전체 점수 */}
+                <div className="p-4 bg-gray-50 border-b">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">전체 품질 점수</span>
+                    <span className={`text-2xl font-bold ${getScoreColor(validationResult.score)}`}>
+                      {validationResult.score}/100
+                    </span>
+                  </div>
+                </div>
+
+                {/* 세부 점수 */}
+                <div className="p-4 grid grid-cols-3 gap-4 text-sm">
+                  <div className="text-center">
+                    <div className={`text-lg font-semibold ${getScoreColor(validationResult.securityScore || 0)}`}>
+                      {validationResult.securityScore || 0}
+                    </div>
+                    <div className="text-gray-600">보안</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={`text-lg font-semibold ${getScoreColor(validationResult.performanceScore || 0)}`}>
+                      {validationResult.performanceScore || 0}
+                    </div>
+                    <div className="text-gray-600">성능</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={`text-lg font-semibold ${getScoreColor(validationResult.maintainabilityScore || 0)}`}>
+                      {validationResult.maintainabilityScore || 0}
+                    </div>
+                    <div className="text-gray-600">유지보수성</div>
+                  </div>
+                </div>
+
+                {/* 이슈 및 제안사항 */}
+                {(validationResult.issues?.length > 0 || validationResult.suggestions?.length > 0) && (
+                  <div className="p-4 border-t">
+                    {validationResult.issues?.length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="font-medium text-red-600 mb-2">발견된 문제점</h4>
+                        <ul className="space-y-1 text-sm">
+                          {validationResult.issues.map((issue, index) => (
+                            <li key={index} className="flex items-start">
+                              <XCircle className="w-4 h-4 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
+                              {issue}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {validationResult.suggestions?.length > 0 && (
+                      <div>
+                        <h4 className="font-medium text-blue-600 mb-2">개선 제안사항</h4>
+                        <ul className="space-y-1 text-sm">
+                          {validationResult.suggestions.map((suggestion, index) => (
+                            <li key={index} className="flex items-start">
+                              <CheckCircle className="w-4 h-4 text-blue-500 mr-2 mt-0.5 flex-shrink-0" />
+                              {suggestion}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 생성 히스토리 */}
+          {generationHistory.length > 1 && (
+            <div>
+              <h3 className="text-lg font-semibold mb-3">생성 히스토리</h3>
+              <div className="space-y-3">
+                {generationHistory.map((entry, index) => (
+                  <div key={index} className="bg-gray-50 p-4 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium">시도 #{entry.attempt}</span>
+                      <span className="text-sm text-gray-500">{entry.timestamp}</span>
+                    </div>
+                    <div className="text-sm text-gray-600 mb-2">{entry.explanation}</div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                        {entry.complexity}
+                      </span>
+                      {entry.features?.map((feature, idx) => (
+                        <span key={idx} className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">
+                          {feature}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 사용 가이드 */}
+      <div className="mt-8 p-6 bg-gray-50 rounded-lg">
+        <h3 className="text-lg font-semibold mb-3">실습 가이드</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-gray-600">
+          <div>
+            <h4 className="font-medium text-gray-800 mb-2">🎯 학습 목표</h4>
+            <ul className="space-y-1">
+              <li>• LLM 기반 코드 생성 파이프라인 이해</li>
+              <li>• 프롬프트 엔지니어링 기법 실습</li>
+              <li>• 자동 코드 검증 및 품질 평가</li>
+              <li>• 반복 개선을 통한 코드 품질 향상</li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-medium text-gray-800 mb-2">💡 실습 팁</h4>
+            <ul className="space-y-1">
+              <li>• 구체적이고 명확한 요구사항 작성</li>
+              <li>• 여러 언어로 동일한 로직 생성 비교</li>
+              <li>• Temperature 값 조정으로 창의성 제어</li>
+              <li>• 검증 결과를 바탕으로 요구사항 개선</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default LLMCodeGenerator;
