@@ -425,28 +425,22 @@ class ToolSQLGenerator:
         self.client = openai.OpenAI(api_key=openai_api_key, base_url=base_url)
         self.openai_model = openai_model
     
-    def generate_sql(self, user_question: str, schema_info: Dict) -> QueryResult:
+    def generate_sql(self, user_question: str, schema_info: Dict, db_manager: DatabaseManager = None) -> QueryResult:
         """Tool 패턴으로 SQL 쿼리 생성"""
         start_time = time.time()
         
         try:
-            # Tool 1: 키워드 추출
-            keywords = self._extract_keywords(user_question)
+            # Tool 1: 실제 데이터 샘플 수집
+            sample_data = self._collect_sample_data(schema_info, db_manager)
             
-            # Tool 2: 관련 스키마 검색
-            relevant_schema = self._get_relevant_schema(keywords, schema_info)
-            
-            # Tool 3: 쿼리 템플릿 생성
-            sql_template = self._generate_sql_template(user_question, relevant_schema)
-            
-            # Tool 4: 쿼리 최적화
-            optimized_query = self._optimize_query(sql_template)
+            # Tool 2: 샘플 데이터 + 사용자 질문으로 한번에 SQL 생성
+            sql_query = self._generate_sql_with_samples(user_question, sample_data)
             
             execution_time = time.time() - start_time
             
             return QueryResult(
                 success=True,
-                sql_query=optimized_query,
+                sql_query=sql_query,
                 execution_time=execution_time
             )
         
@@ -459,22 +453,103 @@ class ToolSQLGenerator:
                 error_message=str(e)
             )
     
-    def _extract_keywords(self, user_question: str) -> List[str]:
-        """Tool 1: 키워드 추출"""
+    def _collect_sample_data(self, schema_info: Dict, db_manager: DatabaseManager) -> Dict[str, Any]:
+        """Tool 1: 실제 데이터 샘플 수집"""
+        sample_data = {}
+        
+        # 각 테이블에서 샘플 데이터 조회
+        for table_name in schema_info.keys():
+            try:
+                # 테이블의 처음 3개 행 조회
+                sample_query = f"SELECT * FROM {table_name} LIMIT 3"
+                
+                if db_manager:
+                    result = db_manager.execute_query(sample_query)
+                    
+                    if result.success and result.result_data:
+                        sample_data[table_name] = {
+                            'schema': schema_info[table_name],
+                            'sample_rows': result.result_data,
+                            'total_columns': len(schema_info[table_name]['columns'])
+                        }
+                    else:
+                        # 쿼리 실행 실패 시 스키마 정보만 사용
+                        sample_data[table_name] = {
+                            'schema': schema_info[table_name],
+                            'sample_rows': [],
+                            'total_columns': len(schema_info[table_name]['columns'])
+                        }
+                else:
+                    # db_manager가 없는 경우 스키마 정보만 사용
+                    sample_data[table_name] = {
+                        'schema': schema_info[table_name],
+                        'sample_rows': [],
+                        'total_columns': len(schema_info[table_name]['columns'])
+                    }
+            except Exception as e:
+                # 에러 발생 시 스키마 정보만 사용
+                sample_data[table_name] = {
+                    'schema': schema_info[table_name],
+                    'sample_rows': [],
+                    'total_columns': len(schema_info[table_name]['columns'])
+                }
+        
+        return sample_data
+    
+    def _generate_sql_with_samples(self, user_question: str, sample_data: Dict) -> str:
+        """Tool 2: 샘플 데이터와 질문을 결합하여 한번에 SQL 생성"""
+        
+        # 샘플 데이터를 텍스트로 포맷팅
+        data_context = ""
+        join_hints = []
+        
+        for table_name, info in sample_data.items():
+            data_context += f"\n=== {table_name} 테이블 ===\n"
+            
+            # 스키마 정보
+            data_context += "컬럼 정보:\n"
+            for col_info in info['schema']['details']:
+                data_context += f"  - {col_info['Field']} ({col_info['Type']})"
+                if col_info['Key'] == 'PRI':
+                    data_context += " [PRIMARY KEY]"
+                elif col_info['Key'] == 'MUL':
+                    data_context += " [FOREIGN KEY]"
+                data_context += "\n"
+            
+            # 조인 힌트 생성
+            if table_name == 'customers':
+                join_hints.append("customers.customer_id = orders.customer_id")
+            elif table_name == 'orders':
+                join_hints.append("orders.order_id = order_items.order_id")
+            elif table_name == 'products':
+                join_hints.append("products.product_id = order_items.product_id")
+            
+            # 샘플 데이터
+            if info['sample_rows']:
+                data_context += f"\n실제 샘플 데이터 ({len(info['sample_rows'])}개 행):\n"
+                for i, row in enumerate(info['sample_rows'], 1):
+                    data_context += f"  행{i}: {row}\n"
+            else:
+                data_context += "\n(샘플 데이터 없음)\n"
+        
+        # 조인 힌트 추가
+        if join_hints:
+            data_context += f"\n=== 테이블 조인 관계 ===\n"
+            for hint in join_hints:
+                data_context += f"  - {hint}\n"
+        
         prompt = f"""
-다음 자연어 질문에서 데이터베이스 쿼리에 필요한 핵심 키워드를 추출하세요.
+데이터베이스 전문가로서 사용자 질문을 정확한 SQL 쿼리로 변환하세요.
 
-질문: "{user_question}"
+사용자 질문: "{user_question}"
 
-키워드 유형별로 분류해서 추출하세요:
-- 대상: (고객, 주문, 상품 등)
-- 시간: (최근, 3개월, 년도 등)
-- 지역: (한국, 미국 등)
-- 집계: (평균, 합계, 개수 등)
-- 분류: (카테고리, 상태 등)
+데이터베이스 구조 및 실제 데이터:
+{data_context}
 
-JSON 형식으로 응답하세요:
-{{"keywords": ["키워드1", "키워드2", ...], "categories": ["대상", "시간", ...]}}
+SQL Query 로만 대답하세요.
+
+참고:
+- 한국은 Korea로 표기합니다.
 """
         
         response = self.client.chat.completions.create(
@@ -483,82 +558,17 @@ JSON 형식으로 응답하세요:
             temperature=0
         )
         
-        try:
-            result = json.loads(response.choices[0].message.content)
-            return result.get("keywords", [])
-        except:
-            return ["고객", "주문", "평균"]  # 기본값
-    
-    def _get_relevant_schema(self, keywords: List[str], schema_info: Dict) -> Dict:
-        """Tool 2: 관련 스키마 정보 필터링"""
-        relevant_tables = {}
+        # 응답 정리
+        sql_query = response.choices[0].message.content.strip()
         
-        # 키워드 기반으로 관련 테이블 선택
-        keyword_table_mapping = {
-            "고객": "customers",
-            "주문": "orders", 
-            "상품": "products",
-            "카테고리": "products",
-            "한국": "customers",
-            "평균": "orders"
-        }
+        # 기본적인 정리
+        sql_query = re.sub(r'```sql\s*', '', sql_query)
+        sql_query = re.sub(r'\s*```', '', sql_query)
+        sql_query = re.sub(r'--.*?\n', '', sql_query)
+        sql_query = re.sub(r'/\*.*?\*/', '', sql_query, flags=re.DOTALL)
+        sql_query = re.sub(r'\s+', ' ', sql_query)
         
-        for keyword in keywords:
-            for k, table in keyword_table_mapping.items():
-                if k in keyword and table in schema_info:
-                    relevant_tables[table] = schema_info[table]
-        
-        # order_items 테이블은 조인이 필요한 경우 자동 포함
-        if "orders" in relevant_tables and "products" in relevant_tables:
-            if "order_items" in schema_info:
-                relevant_tables["order_items"] = schema_info["order_items"]
-        
-        return relevant_tables
-    
-    def _generate_sql_template(self, user_question: str, relevant_schema: Dict) -> str:
-        """Tool 3: SQL 템플릿 생성"""
-        schema_text = ""
-        for table_name, info in relevant_schema.items():
-            schema_text += f"{table_name}: {', '.join(info['columns'])}\n"
-        
-        prompt = f"""
-사용자 질문과 관련 스키마 정보를 바탕으로 SQL 쿼리를 생성하세요.
-
-질문: "{user_question}"
-
-관련 스키마:
-{schema_text}
-
-규칙:
-1. 완전한 실행 가능한 SQL 쿼리만 반환
-2. 주석이나 설명 없이 순수 SQL만
-3. 적절한 JOIN, WHERE, GROUP BY 사용
-4. 컬럼명과 테이블명 정확히 사용
-
-SQL 쿼리:
-"""
-        
-        response = self.client.chat.completions.create(
-            model=self.openai_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-        
-        return response.choices[0].message.content.strip()
-    
-    def _optimize_query(self, sql_query: str) -> str:
-        """Tool 4: 쿼리 최적화"""
-        # 간단한 최적화 규칙 적용
-        optimized = sql_query
-        
-        # 불필요한 주석 제거
-        optimized = re.sub(r'--.*?\n', '', optimized)
-        optimized = re.sub(r'/\*.*?\*/', '', optimized, flags=re.DOTALL)
-        
-        # 여러 공백을 하나로
-        optimized = re.sub(r'\s+', ' ', optimized)
-        
-        return optimized.strip()
+        return sql_query.strip()
 
 class PromptTester:
     """프롬프트 테스트 및 비교 시스템"""
@@ -615,7 +625,7 @@ class PromptTester:
             # Tool 방식 실행
             console.print("\n🔧 Tool 패턴 방식 실행 중...", style="yellow")
             try:
-                tool_result = self.tool.generate_sql(user_question, schema_info)
+                tool_result = self.tool.generate_sql(user_question, schema_info, self.db)
                 
                 if tool_result.success and tool_result.sql_query:
                     db_result = self.db.execute_query(tool_result.sql_query)
