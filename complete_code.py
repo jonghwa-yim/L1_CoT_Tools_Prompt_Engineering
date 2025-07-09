@@ -44,7 +44,11 @@ class DatabaseManager:
             'port': port,
             'database': database,
             'user': user,
-            'password': password
+            'password': password,
+            'autocommit': True,
+            'consume_results': True,
+            'connection_timeout': 10,
+            'sql_mode': 'TRADITIONAL'
         }
         self.connection = None
     
@@ -68,12 +72,13 @@ class DatabaseManager:
     def execute_query(self, query: str) -> QueryResult:
         """쿼리 실행 및 결과 반환"""
         start_time = time.time()
+        cursor = None
         
         try:
             cursor = self.connection.cursor(dictionary=True)
             cursor.execute(query)
             
-            if query.strip().upper().startswith('SELECT'):
+            if query.strip().upper().startswith('SELECT') or query.strip().upper().startswith('SHOW') or query.strip().upper().startswith('DESCRIBE'):
                 result_data = cursor.fetchall()
                 execution_time = time.time() - start_time
                 return QueryResult(
@@ -101,7 +106,11 @@ class DatabaseManager:
                 error_message=str(e)
             )
         finally:
-            cursor.close()
+            if cursor:
+                try:
+                    cursor.close()
+                except:
+                    pass  # cursor가 이미 닫혔거나 에러가 있어도 무시
     
     def setup_database(self):
         """데이터베이스 및 테이블 생성"""
@@ -236,31 +245,42 @@ class DatabaseManager:
         console.print("🔧 데이터베이스 설정 중...", style="blue")
         
         # 테이블 생성
-        for query in setup_queries:
+        for i, query in enumerate(setup_queries):
+            console.print(f"  📝 실행 중... ({i+1}/{len(setup_queries)})", end="\r")
             result = self.execute_query(query)
             if not result.success:
-                console.print(f"❌ 테이블 생성 실패: {result.error_message}", style="red")
+                console.print(f"\n❌ 테이블 생성 실패: {result.error_message}", style="red")
                 return False
+            time.sleep(0.1)  # 약간의 대기 시간
+        
+        console.print("\n🔧 샘플 데이터 삽입 중...", style="blue")
         
         # 샘플 데이터 삽입
-        for query in sample_data_queries:
+        for i, query in enumerate(sample_data_queries):
+            console.print(f"  📊 삽입 중... ({i+1}/{len(sample_data_queries)})", end="\r")
             result = self.execute_query(query)
             if not result.success:
-                console.print(f"❌ 데이터 삽입 실패: {result.error_message}", style="red")
+                console.print(f"\n❌ 데이터 삽입 실패: {result.error_message}", style="red")
                 return False
+            time.sleep(0.1)  # 약간의 대기 시간
         
-        console.print("✅ 데이터베이스 설정 완료!", style="green")
+        console.print("\n✅ 데이터베이스 설정 완료!", style="green")
         return True
     
     def get_schema_info(self) -> Dict[str, Any]:
         """데이터베이스 스키마 정보 반환"""
         schema_info = {}
         
-        # 테이블 목록 조회
-        tables_query = "SHOW TABLES"
-        result = self.execute_query(tables_query)
-        
-        if result.success:
+        try:
+            # 테이블 목록 조회
+            tables_query = "SHOW TABLES"
+            result = self.execute_query(tables_query)
+            
+            if not result.success:
+                console.print(f"❌ 테이블 목록 조회 실패: {result.error_message}", style="red")
+                return schema_info
+            
+            # 각 테이블의 컬럼 정보 조회
             for row in result.result_data:
                 table_name = list(row.values())[0]
                 
@@ -273,14 +293,20 @@ class DatabaseManager:
                         'columns': [col['Field'] for col in columns_result.result_data],
                         'details': columns_result.result_data
                     }
+                else:
+                    console.print(f"⚠️ 테이블 {table_name} 스키마 조회 실패: {columns_result.error_message}", style="yellow")
+        
+        except Exception as e:
+            console.print(f"❌ 스키마 정보 조회 중 오류: {str(e)}", style="red")
         
         return schema_info
 
 class CoTSQLGenerator:
     """Chain of Thought 방식의 SQL 생성기"""
     
-    def __init__(self, openai_api_key: str, base_url: Optional[str] = None):
+    def __init__(self, openai_api_key: str, base_url: Optional[str] = None, openai_model: str = ""):
         self.client = openai.OpenAI(api_key=openai_api_key, base_url=base_url)
+        self.openai_model = openai_model
     
     def generate_sql(self, user_question: str, schema_info: Dict) -> QueryResult:
         """CoT 방식으로 SQL 쿼리 생성"""
@@ -334,7 +360,7 @@ Chain of Thought 방식으로 단계별 추론 과정을 보여주세요.
         
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model=self.openai_model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1
             )
@@ -395,8 +421,9 @@ Chain of Thought 방식으로 단계별 추론 과정을 보여주세요.
 class ToolSQLGenerator:
     """Tool 패턴 방식의 SQL 생성기"""
     
-    def __init__(self, openai_api_key: str, base_url: Optional[str] = None):
+    def __init__(self, openai_api_key: str, base_url: Optional[str] = None, openai_model: str = ""):
         self.client = openai.OpenAI(api_key=openai_api_key, base_url=base_url)
+        self.openai_model = openai_model
     
     def generate_sql(self, user_question: str, schema_info: Dict) -> QueryResult:
         """Tool 패턴으로 SQL 쿼리 생성"""
@@ -451,7 +478,7 @@ JSON 형식으로 응답하세요:
 """
         
         response = self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=self.openai_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
@@ -512,7 +539,7 @@ SQL 쿼리:
 """
         
         response = self.client.chat.completions.create(
-            model="gpt-4",
+            model=self.openai_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
@@ -546,34 +573,70 @@ class PromptTester:
         """CoT와 Tool 패턴 비교 실행"""
         console.print(f"\n🔍 질문: {user_question}", style="bold blue")
         
-        schema_info = self.db.get_schema_info()
         results = {}
         
-        # CoT 방식 실행
-        console.print("\n🧠 Chain of Thought 방식 실행 중...", style="yellow")
-        cot_result = self.cot.generate_sql(user_question, schema_info)
+        try:
+            # 데이터베이스 연결 상태 확인
+            if not self.db.connection or not self.db.connection.is_connected():
+                console.print("❌ 데이터베이스 연결이 끊어졌습니다. 재연결을 시도합니다.", style="red")
+                if not self.db.connect():
+                    console.print("❌ 데이터베이스 재연결에 실패했습니다.", style="red")
+                    return results
+            
+            schema_info = self.db.get_schema_info()
+            
+            if not schema_info:
+                console.print("❌ 스키마 정보를 가져올 수 없습니다.", style="red")
+                return results
+            
+            # CoT 방식 실행
+            console.print("\n🧠 Chain of Thought 방식 실행 중...", style="yellow")
+            try:
+                cot_result = self.cot.generate_sql(user_question, schema_info)
+                
+                if cot_result.success and cot_result.sql_query:
+                    db_result = self.db.execute_query(cot_result.sql_query)
+                    cot_result.result_data = db_result.result_data
+                    if not db_result.success:
+                        cot_result.error_message = db_result.error_message
+                        cot_result.success = False
+                
+                results['cot'] = cot_result
+            
+            except Exception as e:
+                console.print(f"❌ CoT 방식 실행 중 오류: {str(e)}", style="red")
+                results['cot'] = QueryResult(
+                    success=False,
+                    sql_query="",
+                    execution_time=0,
+                    error_message=str(e)
+                )
+            
+            # Tool 방식 실행
+            console.print("\n🔧 Tool 패턴 방식 실행 중...", style="yellow")
+            try:
+                tool_result = self.tool.generate_sql(user_question, schema_info)
+                
+                if tool_result.success and tool_result.sql_query:
+                    db_result = self.db.execute_query(tool_result.sql_query)
+                    tool_result.result_data = db_result.result_data
+                    if not db_result.success:
+                        tool_result.error_message = db_result.error_message
+                        tool_result.success = False
+                
+                results['tool'] = tool_result
+            
+            except Exception as e:
+                console.print(f"❌ Tool 방식 실행 중 오류: {str(e)}", style="red")
+                results['tool'] = QueryResult(
+                    success=False,
+                    sql_query="",
+                    execution_time=0,
+                    error_message=str(e)
+                )
         
-        if cot_result.success and cot_result.sql_query:
-            db_result = self.db.execute_query(cot_result.sql_query)
-            cot_result.result_data = db_result.result_data
-            if not db_result.success:
-                cot_result.error_message = db_result.error_message
-                cot_result.success = False
-        
-        results['cot'] = cot_result
-        
-        # Tool 방식 실행
-        console.print("\n🔧 Tool 패턴 방식 실행 중...", style="yellow")
-        tool_result = self.tool.generate_sql(user_question, schema_info)
-        
-        if tool_result.success and tool_result.sql_query:
-            db_result = self.db.execute_query(tool_result.sql_query)
-            tool_result.result_data = db_result.result_data
-            if not db_result.success:
-                tool_result.error_message = db_result.error_message
-                tool_result.success = False
-        
-        results['tool'] = tool_result
+        except Exception as e:
+            console.print(f"❌ 비교 실행 중 전체 오류: {str(e)}", style="red")
         
         return results
     
@@ -684,6 +747,7 @@ def main():
     # 환경 변수 확인
     openai_api_key = os.getenv('OPENAI_API_KEY')
     openai_url = os.getenv('OPENAI_URL')
+    openai_model = os.getenv('OPENAI_MODEL', 'gpt-4')
     if not openai_api_key:
         console.print("❌ OPENAI_API_KEY 환경변수가 설정되지 않았습니다.", style="red")
         console.print("💡 .env 파일에 OPENAI_API_KEY=your-api-key 를 추가하세요.", style="yellow")
@@ -702,6 +766,7 @@ def main():
     if not db.connect():
         console.print("❌ 데이터베이스 연결에 실패했습니다.", style="red")
         console.print("💡 MySQL 서버가 실행 중인지 확인하세요.", style="yellow")
+        console.print("💡 Docker: docker run --name prompt-mysql -e MYSQL_ROOT_PASSWORD=password123 -e MYSQL_DATABASE=ecommerce_demo -p 3306:3306 -d mysql:8.0", style="cyan")
         return
     
     # 데이터베이스 초기화 여부 확인
@@ -711,8 +776,8 @@ def main():
             return
     
     # SQL 생성기 초기화
-    cot_generator = CoTSQLGenerator(openai_api_key, base_url=openai_url)
-    tool_generator = ToolSQLGenerator(openai_api_key, base_url=openai_url)
+    cot_generator = CoTSQLGenerator(openai_api_key, base_url=openai_url, openai_model=openai_model)
+    tool_generator = ToolSQLGenerator(openai_api_key, base_url=openai_url, openai_model=openai_model)
     tester = PromptTester(db, cot_generator, tool_generator)
     
     # 예제 질문들
