@@ -1,5 +1,13 @@
 # 프로젝트 설정 및 실행 가이드
 
+본 프로젝트는 2개의 sub project 가 있다.
+
+1. src_sql : MySQL 데이터베이스를 구축하고 sql query를 만드는 툴 및 CoT prompt 작성 실험.
+
+2. src_code_llm : code review 하는 llm prompt technique 실험.
+
+먼저 MySQL 프로젝트에 대해 설명하겠다.
+
 ## 1. MySQL 데이터베이스 시작
 
 Windows에서 MySQL 서비스를 수동으로 시작하는 방법입니다.
