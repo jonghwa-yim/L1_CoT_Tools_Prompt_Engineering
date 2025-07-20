@@ -66,24 +66,24 @@ CREATE TABLE order_items (
 -- 고객 데이터 (다양한 국가, 한국 고객 포함)
 INSERT INTO customers (name, email, country, signup_date) VALUES
 -- 한국 고객들
-('김민수', 'minsu.kim@email.com', 'Korea', '2023-08-15'),
-('이지영', 'jiyoung.lee@email.com', 'Korea', '2023-09-20'),
-('박철수', 'cheolsu.park@email.com', 'Korea', '2023-10-10'),
-('정수진', 'sujin.jung@email.com', 'Korea', '2023-11-05'),
-('최영호', 'youngho.choi@email.com', 'Korea', '2024-01-12'),
-('한서연', 'seoyeon.han@email.com', 'Korea', '2024-02-18'),
-('윤대현', 'daehyun.yoon@email.com', 'Korea', '2024-03-22'),
-('송미라', 'mira.song@email.com', 'Korea', '2024-04-15'),
+('김민수', 'minsu.kim@email.com', 'Korea', '2024-08-15'),
+('이지영', 'jiyoung.lee@email.com', 'Korea', '2024-09-20'),
+('박철수', 'cheolsu.park@email.com', 'Korea', '2024-10-10'),
+('정수진', 'sujin.jung@email.com', 'Korea', '2024-11-05'),
+('최영호', 'youngho.choi@email.com', 'Korea', '2025-01-12'),
+('한서연', 'seoyeon.han@email.com', 'Korea', '2025-02-18'),
+('윤대현', 'daehyun.yoon@email.com', 'Korea', '2025-03-22'),
+('송미라', 'mira.song@email.com', 'Korea', '2025-04-15'),
 
 -- 기타 국가 고객들
-('John Smith', 'john.smith@email.com', 'USA', '2023-07-10'),
-('Emma Wilson', 'emma.wilson@email.com', 'UK', '2023-08-05'),
-('Hiroshi Tanaka', 'hiroshi.tanaka@email.com', 'Japan', '2023-09-15'),
-('Marie Dubois', 'marie.dubois@email.com', 'France', '2023-10-20'),
-('Wang Lei', 'wang.lei@email.com', 'China', '2023-11-25'),
-('Anna Mueller', 'anna.mueller@email.com', 'Germany', '2024-01-08'),
-('Carlos Rodriguez', 'carlos.rodriguez@email.com', 'Spain', '2024-02-14'),
-('Lisa Anderson', 'lisa.anderson@email.com', 'USA', '2024-03-30');
+('John Smith', 'john.smith@email.com', 'USA', '2024-07-10'),
+('Emma Wilson', 'emma.wilson@email.com', 'UK', '2024-08-05'),
+('Hiroshi Tanaka', 'hiroshi.tanaka@email.com', 'Japan', '2024-09-15'),
+('Marie Dubois', 'marie.dubois@email.com', 'France', '2024-10-20'),
+('Wang Lei', 'wang.lei@email.com', 'China', '2024-11-25'),
+('Anna Mueller', 'anna.mueller@email.com', 'Germany', '2025-01-08'),
+('Carlos Rodriguez', 'carlos.rodriguez@email.com', 'Spain', '2025-02-14'),
+('Lisa Anderson', 'lisa.anderson@email.com', 'USA', '2025-03-30');
 
 -- 상품 데이터 (다양한 카테고리)
 INSERT INTO products (name, category, price, stock_quantity) VALUES
@@ -126,36 +126,34 @@ INSERT INTO products (name, category, price, stock_quantity) VALUES
 
 -- 주문 데이터 (최근 6개월, 특히 최근 3개월에 집중)
 INSERT INTO orders (customer_id, order_date, total_amount, status) VALUES
--- 2024년 5월 주문들 (최근 3개월 내)
-(1, '2024-05-15 14:30:00', 1628000.00, 'completed'),
-(3, '2024-05-20 16:45:00', 378000.00, 'completed'),
-(5, '2024-05-25 11:20:00', 899000.00, 'completed'),
-(2, '2024-05-28 09:15:00', 518000.00, 'completed'),
-
--- 2024년 6월 주문들
-(4, '2024-06-02 13:25:00', 2939000.00, 'completed'),
-(6, '2024-06-08 15:40:00', 668000.00, 'completed'),
-(1, '2024-06-12 10:30:00', 329000.00, 'completed'),
-(7, '2024-06-18 14:15:00', 1048000.00, 'completed'),
-(8, '2024-06-22 16:20:00', 197000.00, 'completed'),
-(3, '2024-06-25 12:45:00', 728000.00, 'completed'),
-
--- 2024년 7월 주문들 (최근)
-(2, '2024-07-01 11:30:00', 1789000.00, 'completed'),
-(5, '2024-07-03 14:20:00', 438000.00, 'completed'),
-(4, '2024-07-05 16:15:00', 328000.00, 'completed'),
-(6, '2024-07-06 09:30:00', 89000.00, 'completed'),
+-- 2025년 5월 주문들 (최근 3개월 내)
+(1, '2025-05-15 14:30:00', 1628000.00, 'completed'),
+(3, '2025-05-20 16:45:00', 378000.00, 'completed'),
+(5, '2025-05-25 11:20:00', 899000.00, 'completed'),
+(2, '2025-05-28 09:15:00', 518000.00, 'completed'),
+-- 2025년 6월 주문들
+(4, '2025-06-02 13:25:00', 939000.00, 'completed'),
+(6, '2025-06-08 15:40:00', 668000.00, 'completed'),
+(1, '2025-06-12 10:30:00', 329000.00, 'completed'),
+(7, '2025-06-18 14:15:00', 1048000.00, 'completed'),
+(8, '2025-06-22 16:20:00', 197000.00, 'completed'),
+(3, '2025-06-25 12:45:00', 728000.00, 'completed'),
+-- 2025년 7월 주문들 (최근)
+(2, '2025-07-01 11:30:00', 789000.00, 'completed'),
+(5, '2025-07-03 14:20:00', 438000.00, 'completed'),
+(4, '2025-07-05 16:15:00', 328000.00, 'completed'),
+(6, '2025-07-06 09:30:00', 89000.00, 'completed'),""",
 
 -- 기타 국가 고객들의 주문 (비교 데이터)
-(9, '2024-06-15 12:00:00', 1299000.00, 'completed'),
-(10, '2024-06-20 14:30:00', 759000.00, 'completed'),
-(11, '2024-07-01 16:45:00', 1249000.00, 'completed'),
-(12, '2024-07-02 10:20:00', 528000.00, 'completed'),
+(9, '2025-06-15 12:00:00', 1299000.00, 'completed'),
+(10, '2025-06-20 14:30:00', 759000.00, 'completed'),
+(11, '2025-07-01 16:45:00', 1249000.00, 'completed'),
+(12, '2025-07-02 10:20:00', 528000.00, 'completed'),
 
 -- 이전 기간 주문들 (3개월 이전)
-(1, '2024-02-15 14:30:00', 1299000.00, 'completed'),
-(2, '2024-03-20 16:45:00', 649000.00, 'completed'),
-(3, '2024-04-10 11:20:00', 379000.00, 'completed');
+(1, '2025-02-15 14:30:00', 1299000.00, 'completed'),
+(2, '2025-03-20 16:45:00', 649000.00, 'completed'),
+(3, '2025-04-10 11:20:00', 379000.00, 'completed');
 
 -- 주문 상세 데이터
 INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES
