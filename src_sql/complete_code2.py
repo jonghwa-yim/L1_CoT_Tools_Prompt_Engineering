@@ -214,8 +214,8 @@ def main():
 
     # 환경 변수 확인
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    openai_url = os.getenv("OPENAI_URL")
-    openai_model = os.getenv("OPENAI_MODEL", "gpt-4")
+    openai_url = os.getenv("OPENAI_URL", None)
+    openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     if not openai_api_key:
         console.print("❌ OPENAI_API_KEY 환경변수가 설정되지 않았습니다.", style="red")
         console.print(

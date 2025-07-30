@@ -8,7 +8,7 @@ load_dotenv()
 
 # 환경 변수에서 API 키와 URL 불러오기
 api_key = os.getenv("OPENAI_API_KEY")
-base_url = os.getenv("OPENAI_URL")
+base_url = os.getenv("OPENAI_URL", None)
 
 client = OpenAI(api_key=api_key, base_url=base_url)
 

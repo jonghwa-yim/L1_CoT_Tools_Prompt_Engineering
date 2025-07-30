@@ -8,7 +8,8 @@ load_dotenv()
 
 # 환경 변수에서 API 키와 URL 불러오기
 api_key = os.getenv("OPENAI_API_KEY")
-base_url = os.getenv("OPENAI_URL")
+base_url = os.getenv("OPENAI_URL", None)
+model_name = os.getenv("OPENAI_MODEL", None)
 
 client = OpenAI(api_key=api_key, base_url=base_url)
 
@@ -65,7 +66,7 @@ contents_CoT = """데이터베이스: 전자상거래 플랫폼
 - 검증: 비즈니스 관점에서 유의미한 결과인가?"""
 
 completion = client.chat.completions.create(
-    model="ax4",
+    model=model_name,
     messages=[
         {
             "role": "user",
